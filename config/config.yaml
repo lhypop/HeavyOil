@@ -1,0 +1,14 @@
+# --------------------------------------------------------
+# Clustering model configuration file
+#
+# This file defines default parameters for clustering 
+# aromatic molecules using periodic DBSCAN and related 
+# filtering methods. Modify these values as needed for 
+# your dataset or system scale.
+# --------------------------------------------------------
+
+# DBSCAN neighborhood radius (distance threshold for neighbors)
+eps: 0.45
+
+# Minimum number of points required to form a core cluster point
+min_samples: 2
