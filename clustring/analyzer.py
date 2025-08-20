@@ -92,29 +92,92 @@ class ClusterAnalyzer:
         frame_clusters = defaultdict(list)
 
         summarys = []
+        cluster_summary = []
         cluster_time = []
+
+        coordinator = coordinate(self.temp, self.residues)
 
         for specific_frame in tqdm(self.frames, desc="Processing"):
             # Get aromatic ring centers and corresponding residues
             self.traject.trajectory[specific_frame] 
-            gro_ring_centers, aromatic_residue, self.box = coordinate(self.traject, self.temp)._get_center_of_aroring()
+            gro_ring_centers, aromatic_residue, self.box = coordinator._get_center_of_aroring(self.traject)
             cluster_labels = self._DBSCAN_clustering(gro_ring_centers, aromatic_residue)
 
-            tolnum, merged_clusters = postprocess(cluster_labels)._postprocss(self.args.infoselect)
-
+            merged_clusters = postprocess(cluster_labels)._postprocss(self.args.infoselect)
             # Store cluster members for current frame
             for cluster in merged_clusters:
                 frame_clusters[specific_frame].append(set(cluster))
 
-            if self.args.info:
-                info_cluster = ClusterAnalysis().get_cluster_statistics(merged_clusters,tolnum)
-                summarys.append(info_cluster)
-                cluster_time.append(self.traject.trajectory.time)
 
+            cluster_sizes = [int(len(cluster)) for cluster in merged_clusters]
+            summarys.append(cluster_sizes)
+            cluster_summary.append(merged_clusters)
+            cluster_time.append(self.traject.trajectory.time)
+
+
+        ######cluster_analysis#####
         if self.args.info:
-            data_file = Path.cwd() / f"data/cluster_nums_{Path(self.top).stem}.txt"
-            ClusterAnalysis().save_outcome(summarys, cluster_time, data_file)
+            data_file = Path(f"cluster_nums_{Path(self.top).stem}.txt")
+            ClusterInfoAnalyzer = ClusterAnalysis(data_file)
+
+            #限制一下，执行这个命令，需要sellect and all
+            pd2 = ClusterInfoAnalyzer.cal_Csize_probability(summarys)
+            print(pd2)
+
+            #可选part or all
+            pd1 = ClusterInfoAnalyzer.get_cluster_statistics(summarys, cluster_time)
+            print(pd1)
+
+            #计算回转半径part
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+
+            Rg_results = []
+
+            for index, specific_frame in tqdm(enumerate(self.frames), 
+                                            total=len(self.frames), 
+                                            desc="Calculating the radius of gyration"):
+                self.traject.trajectory[specific_frame]  
+                cluster_set = cluster_summary[index]
+
+                for set_idx, res_set in enumerate(cluster_set):
+
+                    positions = []
+                    masses = []
+                    for res in res_set:
+                        positions.append(res.atoms.positions)  # shape (N_atoms, 3)
+                        masses.append(res.atoms.masses)       # shape (N_atoms,)
+                    
+                    positions = np.vstack(positions)  # 合并成 (total_atoms, 3)
+                    masses = np.concatenate(masses)   # 合并成 (total_atoms,)
+                    
+                    # 计算质心
+                    r_cm = np.sum(positions * masses[:, None], axis=0) / masses.sum()
+                    
+                    # 计算回转半径
+                    Rg = np.sqrt(np.sum(masses[:, None] * (positions - r_cm)**2) / masses.sum())
+                    
+                    Rg_results.append(Rg)
+
+            Rg_array = np.array(Rg_results)
+            # 1. 直方图归一化为概率密度
+            plt.hist(Rg_array, bins=10, density=True, alpha=0.6, color='skyblue', label='Histogram')
+
+            # 2. KDE 平滑曲线
+            sns.kdeplot(Rg_array, bw_adjust=0.5, color='red', label='KDE')
+
+            plt.xlabel("Radius of Gyration (Rg)")
+            plt.ylabel("Probability Density")
+            plt.title("Rg Probability Density Distribution")
+            plt.legend()
+            plt.savefig(f"{Path(self.top).stem}.png")
+            # plt.show()
+
             
+
+
+
+        ######visualization########
 
         all_cluster_list = frame_clusters.get(self.frames[-1])
         clusters_residues_atoms_position = []

@@ -10,11 +10,11 @@ class postprocess:
 
 
         self._group_by_labels()
-        self.tolnum,self.filtered_clusters = self._filter_single(select)
+        self.filtered_clusters = self._filter_single(select)
         self.merge_clusters = self._merge_clusters()
         self.valiate_cluster()
 
-        return self.tolnum,self.merge_clusters
+        return self.merge_clusters
 
     def _group_by_labels(self):
 
@@ -22,20 +22,26 @@ class postprocess:
         for cluster_id, res in self.labels:
             self.unique_res_clusters[cluster_id].add(res)
 
-    def _filter_single(self,select):
-
-        if select == "part" :
-            total_numbers = len([cluster for cluster in 
-                    (set(residues) for residues in self.unique_res_clusters.values())])
-        else:
-            total_numbers = len([cluster for cluster in 
-                (set(residues) for residues in self.unique_res_clusters.values()) 
-                if len(cluster) > 1])
-        filtered_clusters = [cluster for cluster in 
-                (set(residues) for residues in self.unique_res_clusters.values()) 
-                if len(cluster) > 1]
+    def _filter_single(self, select: str):
+        """Filter clusters based on 'select' mode.
         
-        return total_numbers,filtered_clusters
+        Args:
+            select (str): 
+                - "part": keep only clusters with size > 1
+                - other: keep all clusters
+        
+        Returns:
+            total_numbers (int): total number of molecules in clusters
+            filtered_clusters (list[set]): clusters after filtering
+        """
+        clusters = [set(residues) for residues in self.unique_res_clusters.values()]
+
+        if select == "part":
+            filtered_clusters = [c for c in clusters if len(c) > 1]
+        else:
+            filtered_clusters = clusters
+
+        return filtered_clusters
     
     def _merge_clusters(self):
         """

@@ -12,8 +12,7 @@ class ArgParser:
             description="Molecular Dynamics Trajectory Analysis Tool",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
             epilog="Examples:\n"
-                   "  python main.py -s system.gro -t traj.xtc\n"
-                   "  python main.py -s system.gro --info"
+                   "  python main.py -s system.gro -t traj.xtc;\n"
         )
         
         self._add_input_arguments(parser)

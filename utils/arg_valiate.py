@@ -30,7 +30,7 @@ class InputValidator:
         self._validate_topology()
         self._validate_trajectory()
         self._validate_frames()
-        self._validate_dependencies()
+        # self._validate_dependencies()
 
     def _validate_topology(self) -> None:
         """Validate topology file parameters."""
@@ -86,15 +86,15 @@ class InputValidator:
             raise ValueError(f"Interval must be positive. Got {self.args.interval}")
 
 
-    def _validate_dependencies(self) -> None:
-        """Validate relationships between parameters."""
-        has_frames = (hasattr(self.args, 'begin') and self.args.begin is not None) or \
-                    (hasattr(self.args, 'end') and self.args.end is not None)
+    # def _validate_dependencies(self) -> None:
+    #     """Validate relationships between parameters."""
+    #     has_frames = (hasattr(self.args, 'begin') and self.args.begin is not None) or \
+    #                 (hasattr(self.args, 'end') and self.args.end is not None)
         
-        if has_frames and (not hasattr(self.args, 'trj') or not self.args.trj):
-            raise ValueError("Frame selection requires trajectory file")
+    #     if has_frames and (not hasattr(self.args, 'trj') or not self.args.trj):
+    #         raise ValueError("Frame selection requires trajectory file")
 
-        if (hasattr(self.args, 'begin') and self.args.begin is not None and 
-            hasattr(self.args, 'end') and self.args.end is not None and 
-            self.args.end <= self.args.begin):
-            raise ValueError(f"End frame ({self.args.end}) must exceed begin frame ({self.args.begin})")
+    #     if (hasattr(self.args, 'begin') and self.args.begin is not None and 
+    #         hasattr(self.args, 'end') and self.args.end is not None and 
+    #         self.args.end <= self.args.begin):
+    #         raise ValueError(f"End frame ({self.args.end}) must exceed begin frame ({self.args.begin})")

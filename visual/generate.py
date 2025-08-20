@@ -69,11 +69,13 @@ class GMXClusterTool:
 
     def _get_existing_group_count(self) -> int:
         """Count existing groups in GRO file."""
+        
         result = self._run_gmx_command(
             ['gmx', 'make_ndx', '-f', f"{self.molname}.gro", '-o', f"{self.molname}.ndx"],
             input='l\nq\n'
         )
-        
+        self._cleanup_file(f"{self.molname}.ndx")
+
         return len([
             line for line in result.stdout.splitlines() 
             if re.match(r'\s*\d+\s+\S.*?:[^:]*$', line)

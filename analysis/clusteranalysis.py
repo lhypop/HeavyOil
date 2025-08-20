@@ -1,50 +1,73 @@
 import numpy as np
 import pandas as pd
+from collections import Counter
 
 class ClusterAnalysis:
     """Analyzes molecular cluster properties and statistics."""
     
-    def __init__(self):
-        pass
+    def __init__(self,datafile):
+        self.datafile = datafile
         
-    def get_cluster_statistics(self,merged_clusters: list, tolal_number: int) -> pd.DataFrame:
+    def get_cluster_statistics(self, summarys: list, cluster_time) -> pd.DataFrame:
         """
-        Calculate descriptive statistics for cluster sizes.
+        Calculate descriptive statistics for cluster sizes per frame.
+        
+        Args:
+            cluster_time_array: list of lists or 2D array, cluster sizes per frame
+            total_number: total number of particles/nodes
+            cluster_time: list/array of frame times
         
         Returns:
-            DataFrame containing:
-            - count: Number of clusters
-            - mean: Average cluster size
-            - std: Standard deviation
-            - min/max: Size range
-            - 25/50/75%: Quartiles
+            DataFrame with descriptive statistics per frame
         """
-        # Get actual cluster sizes
-        cluster_sizes = [len(cluster) for cluster in merged_clusters]
+        statis_cluster = []
         
-        for i in range(tolal_number - np.sum(cluster_sizes)):
-            cluster_sizes.append(1)
+        for cluster_sizes, time in zip(summarys, cluster_time):
+            sizes = list(cluster_sizes)
+
+            # print(f"Total number of molecular in clusters is : {np.sum(sizes)}")
+            size_series = pd.Series(sizes, name='cluster_size')
+            stats = size_series.describe().to_dict()
+            stats['time'] = time
+            statis_cluster.append(stats)
         
-        # Generate statistics
-        size_series = pd.Series(cluster_sizes, name='cluster_size')
-        stats = size_series.describe()
-        
-        # Convert to DataFrame for better formatting
-        return pd.DataFrame(stats).transpose()
+        return pd.DataFrame(statis_cluster)
+    
+    def cal_Csize_probability(self, summarys: list):
 
-    def save_outcome(self, summarys, time, data_file):
+        flat_list = [x for row in summarys for x in row]
+        counts = Counter(flat_list)
+        n_frame = len(summarys)
 
-        lines_list = []
-        header = f"{'times':<10} {'count':<10} {'mean':<10} {'std':<10} {'min':<10} {'25%':<10} {'50%':<10} {'75%':<10} {'max':<10}\n"
-        lines_list.append(header)
-        for j in range(len(summarys)):
-            line = f"{time[j]:<10} {summarys[j]['count']:<10} {summarys[j]['mean']:<10.2f} {summarys[j]['std']:<10.2f} " \
-                   f"{summarys[j]['min']:<10} {summarys[j]['25%']:<10} {summarys[j]['50%']:<10} {summarys[j]['75%']:<10} " \
-                   f"{summarys[j]['max']:<10}\n"
-            lines_list.append(line)
+        values = np.array(list(counts.keys()), dtype=float)
+        freqs = np.array(list(counts.values()), dtype=float)
 
-        if not data_file.exists():
-            data_file.parent.mkdir(exist_ok=True,parents=True)
+        f_counts = freqs / n_frame
+        p_counts = values * f_counts / sum(summarys[0])
 
-        with open(data_file, "w") as f:
-            f.writelines(lines_list)
+        sort_idx = np.argsort(values)
+        values_sorted = values[sort_idx]
+        p_counts_sorted = p_counts[sort_idx]
+
+        print("values_sorted:", values_sorted)
+        print("p_counts_sorted:", p_counts_sorted)
+
+    # def cal_radius_of_gyration():
+
+
+
+    # def save_outcome(summarys, time, data_file):
+
+    #     lines_list = []
+    #     header = f"{'times':<10} {'count':<10} {'mean':<10} {'std':<10} {'min':<10} {'25%':<10} {'50%':<10} {'75%':<10} {'max':<10}\n"
+    #     for j in range(len(summarys)):
+    #         line = f"{time[j]:<10} {summarys[j]['count']:<10} {summarys[j]['mean']:<10.2f} {summarys[j]['std']:<10.2f} " \
+    #                f"{summarys[j]['min']:<10} {summarys[j]['25%']:<10} {summarys[j]['50%']:<10} {summarys[j]['75%']:<10} " \
+    #                f"{summarys[j]['max']:<10}\n"
+    #         print(line)
+    #         lines_list.append(line)
+
+    #     with open(data_file, "w") as f:
+    #         f.writelines(lines_list)
+
+    # def plot_MaxSize_and_AverSize():
