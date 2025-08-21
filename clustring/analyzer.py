@@ -121,61 +121,44 @@ class ClusterAnalyzer:
             ClusterInfoAnalyzer = ClusterAnalysis(data_file)
 
             #限制一下，执行这个命令，需要sellect and all
-            pd2 = ClusterInfoAnalyzer.cal_Csize_probability(summarys)
-            print(pd2)
-
-            #可选part or all
-            pd1 = ClusterInfoAnalyzer.get_cluster_statistics(summarys, cluster_time)
+            pd1 = ClusterInfoAnalyzer.cal_Csize_probability(summarys)
             print(pd1)
 
-            #计算回转半径part
-            import matplotlib.pyplot as plt
-            import seaborn as sns
+            #可选part or all
+            pd2 = ClusterInfoAnalyzer.get_cluster_statistics(summarys, cluster_time)
+            print(pd2)
 
-            Rg_results = []
+            #计算形状特征
+            Rg_results_all = []
+            principal_axes_all = []
+            anisotropy_all = []
+            axis_ratios_all = []
+            density_all = []
 
-            for index, specific_frame in tqdm(enumerate(self.frames), 
-                                            total=len(self.frames), 
-                                            desc="Calculating the radius of gyration"):
-                self.traject.trajectory[specific_frame]  
+            # 循环每帧
+            for index, specific_frame in enumerate(self.frames):
+                self.traject.trajectory[specific_frame]
                 cluster_set = cluster_summary[index]
 
-                for set_idx, res_set in enumerate(cluster_set):
+                S_set, Rgs, principal_axes_set, anisotropy_set, axis_ratios_set, density_set = \
+                    ClusterInfoAnalyzer.gyration_tensor(cluster_set, self.box)
 
-                    positions = []
-                    masses = []
-                    for res in res_set:
-                        positions.append(res.atoms.positions)  # shape (N_atoms, 3)
-                        masses.append(res.atoms.masses)       # shape (N_atoms,)
-                    
-                    positions = np.vstack(positions)  # 合并成 (total_atoms, 3)
-                    masses = np.concatenate(masses)   # 合并成 (total_atoms,)
-                    
-                    # 计算质心
-                    r_cm = np.sum(positions * masses[:, None], axis=0) / masses.sum()
-                    
-                    # 计算回转半径
-                    Rg = np.sqrt(np.sum(masses[:, None] * (positions - r_cm)**2) / masses.sum())
-                    
-                    Rg_results.append(Rg)
+                Rg_results_all.extend(Rgs)
+                principal_axes_all.extend(principal_axes_set)
+                anisotropy_all.extend(anisotropy_set)
+                axis_ratios_all.extend(axis_ratios_set)
+                density_all.extend(density_set)
 
-            Rg_array = np.array(Rg_results)
-            # 1. 直方图归一化为概率密度
-            plt.hist(Rg_array, bins=10, density=True, alpha=0.6, color='skyblue', label='Histogram')
+            ClusterInfoAnalyzer.plot_cluster_shape_distribution(
+                Rg_results_all,
+                principal_axes_all,
+                anisotropy_all,
+                axis_ratios_all,
+                density_all,
+                self.top
+            )
 
-            # 2. KDE 平滑曲线
-            sns.kdeplot(Rg_array, bw_adjust=0.5, color='red', label='KDE')
-
-            plt.xlabel("Radius of Gyration (Rg)")
-            plt.ylabel("Probability Density")
-            plt.title("Rg Probability Density Distribution")
-            plt.legend()
-            plt.savefig(f"{Path(self.top).stem}.png")
-            # plt.show()
-
-            
-
-
+            ##统计参与团簇形成的分子个数占总体的百分比
 
         ######visualization########
 
