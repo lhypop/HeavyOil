@@ -6,7 +6,7 @@ class postprocess:
         self.unique_res_clusters = defaultdict(set)
 
 
-    def _postprocss(self, select):
+    def _postprocess(self, select):
 
 
         self._group_by_labels()

@@ -94,26 +94,57 @@ def clusterTranslator(filtered_clusters,box_lengths,move_file):
                 })
 
         # # Print cluster optimization results
-        # if cluster_list:
-        #     cluster_move_list.extend(cluster_list)
-        #     print(f"\nCluster with reference: {ref_mol}")
-        #     # Formatting header
-        #     print(f"{'Molecule':<15} {'Improvement':<12} {'Final Distance':<15} {'Total Shift':<20} {'Path'}")
-        #     for item in cluster_list:
-        #         path_str = " -> ".join([f"{step['axis']}({step['direction']})" for step in item['path']])
-        #         print(f"{str(item['molecule']):<15} {item['improvement']:<12.2f} {item['final_distance']:<15.2f} {str(item['total_shift']):<20} {path_str}")
+        if cluster_list:
+            cluster_move_list.extend(cluster_list)
 
-    # Generate VMD visualization script
-    with open(move_file,"w") as f:
-        f.write("# Move molecules for optimal visualization across periodic boundaries\n")
-        f.write("source move_residue.tcl\n")  # Load movement procedure
-        
-        # Write movement commands for each molecule
+            # print(f"\nCluster with reference: {ref_mol}")
+            # Formatting header
+            # print(f"{'Molecule':<15} {'Improvement':<12} {'Final Distance':<15} {'Total Shift':<20} {'Path'}")
+
+            for item in cluster_list:
+                path_str = " -> ".join([f"{step['axis']}({step['direction']})" for step in item['path']])
+                # print(f"{str(item['molecule']):<15} {item['improvement']:<12.2f} {item['final_distance']:<15.2f} {str(item['total_shift']):<20} {path_str}")
+
+
+    with open(move_file, "w") as f:
+        f.write("""# Move molecules for optimal visualization across periodic boundaries
+proc move_residue {resid direction} {
+    set cell [lindex [pbc get -first 0 -last 0 -molid top] 0]
+    set box_x [veclength [lindex $cell 0]]
+    set box_y [veclength [lindex $cell 1]]
+    set box_z [veclength [lindex $cell 2]]
+
+    set sel [atomselect top "resid $resid"]
+    if {[$sel num] == 0} {
+        puts "Error: Residue $resid not found!"
+        $sel delete
+        return 0
+    }
+
+    switch -regexp -- $direction {
+        {^-X$} { $sel moveby [list [expr -$box_x] 0 0] }
+        {^X$}  { $sel moveby [list $box_x 0 0] }
+        {^-Y$} { $sel moveby [list 0 [expr -$box_y] 0] }
+        {^Y$}  { $sel moveby [list 0 $box_y 0] }
+        {^-Z$} { $sel moveby [list 0 0 [expr -$box_z]] }
+        {^Z$}  { $sel moveby [list 0 0 $box_z] }
+        default {
+            puts "Error: Invalid direction! Use X, -X, Y, -Y, Z, -Z"
+            $sel delete
+            return 0
+        }
+    }
+    $sel delete
+    return 1
+}
+""")
+        # 接着写 move_residue 命令
         for item in cluster_move_list:
+            resid = item['molecule'].resid
             for step in item['path']:
                 axis, direction = step['axis'], step['direction']
-                # Format command based on direction
                 if direction == "positive":
-                    f.write(f"move_residue {item['molecule'].resid} {axis}\n")
+                    f.write(f"move_residue {resid} {axis}\n")
                 else:
-                    f.write(f"move_residue {item['molecule'].resid} -{axis}\n")
+                    f.write(f"move_residue {resid} -{axis}\n")
+

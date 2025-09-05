@@ -55,6 +55,9 @@ class coordinate:
                     aromatic_rings.append(ring)
 
             return aromatic_rings
+    
+    def _get_box_dimension(self,traj):
+        return traj.dimensions[:3] / 10 
 
     def _get_center_of_aroring(self,traj):
         """
@@ -66,7 +69,7 @@ class coordinate:
             Frame index to analyze. Use -1 for the last frame.
         """
         residues = traj.residues
-        box = traj.dimensions[:3] / 10 
+        box = self._get_box_dimension(traj)
 
         ring_centers = []
         aromatic_residues = []
