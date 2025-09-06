@@ -42,7 +42,7 @@ It is designed to work with **GROMACS** output files (`.gro` and `.xtc`) and pro
 Clone this repository and install dependencies:
 
 ```bash
-git clone https://github.com/yourusername/HeavyOil.git
+git clone https://github.com/lhypop/HeavyOil.git
 
 cd HeavyOil
 
