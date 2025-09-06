@@ -144,69 +144,101 @@ class ClusterAnalyzer:
         data_file = Path(f"cluster_nums_{Path(self.top).stem}.txt")
         ClusterInfoAnalyzer = ClusterAnalysis(data_file)
 
-        # ------数量特征模块------
-        cluster_size = ClusterInfoAnalyzer.cal_Csize_probability(summarys)
-        cluster_describe = ClusterInfoAnalyzer.get_cluster_statistics(summarys, cluster_time)
-        components = ["sa*", "ar*", "re*", "as*"]
-        res_counts = Counter(self.traject.residues.resnames)
-        stats_clusters, stats_participation = ClusterInfoAnalyzer.get_components_ratio(components,cluster_summary,res_counts)
+        # # ------数量特征模块------
+        # cluster_size = ClusterInfoAnalyzer.cal_Csize_probability(summarys)
+        # cluster_describe = ClusterInfoAnalyzer.get_cluster_statistics(summarys, cluster_time)
+        # components = ["sa*", "ar*", "re*", "as*"]
+        # res_counts = Counter(self.traject.residues.resnames)
+        # stats_clusters, stats_participation = ClusterInfoAnalyzer.get_components_ratio(components,cluster_summary,res_counts)
 
-        # ------形状特征模块------
-        Rg_results_all = []
-        principal_axes_all = []
-        anisotropy_all = []
-        axis_ratios_all = []
-        volume_all = []
-        density_all = []
+        # # ------形状特征模块------
+        # Rg_results_all,principal_axes_all,anisotropy_all,axis_ratios_all,volume_all,density_all = [],[],[],[],[],[]
+        # for index, specific_frame in enumerate(self.frames):
+        #     self.traject.trajectory[specific_frame] 
+        #     self.box = coordinator._get_box_dimension(self.traject)
+        #     cluster_set = cluster_summary[index]
+
+        #     S_set, Rgs, principal_axes_set, anisotropy_set, axis_ratios_set, volume_set, density_set = \
+        #         ClusterInfoAnalyzer.gyration_tensor(cluster_set, self.box)
+
+        #     Rg_results_all.extend(Rgs)
+        #     principal_axes_all.extend(principal_axes_set)
+        #     anisotropy_all.extend(anisotropy_set)
+        #     axis_ratios_all.extend(axis_ratios_set)
+        #     volume_all.extend(volume_set)
+        #     density_all.extend(density_set)
+
+        # Rg_array = np.array(Rg_results_all)
+        # principal_axes_array = np.vstack(principal_axes_all)
+        # anisotropy_array = np.array(anisotropy_all)
+        # axis_ratios_array = np.vstack(axis_ratios_all)
+        # volume_array = np.array(volume_all)
+        # density_array = np.array(density_all)
+
+
+        # ------分布特征模块------
+        import matplotlib.pyplot as plt
+        bins_total = None
+        g_r_total = None
+        N_frames = len(self.frames)
+        ## 1. 以最小的盒子大小生成区间
+
         for index, specific_frame in enumerate(self.frames):
             self.traject.trajectory[specific_frame] 
             self.box = coordinator._get_box_dimension(self.traject)
             cluster_set = cluster_summary[index]
 
-            S_set, Rgs, principal_axes_set, anisotropy_set, axis_ratios_set, volume_set, density_set = \
-                ClusterInfoAnalyzer.gyration_tensor(cluster_set, self.box)
+            hist, edges, n_clusters = ClusterInfoAnalyzer.distribution_analysis(cluster_set,self.box)
+            # 当前帧体积和密度
+            V = np.prod(self.box)
+            rho = n_clusters / V
 
-            Rg_results_all.extend(Rgs)
-            principal_axes_all.extend(principal_axes_set)
-            anisotropy_all.extend(anisotropy_set)
-            axis_ratios_all.extend(axis_ratios_set)
-            volume_all.extend(volume_set)
-            density_all.extend(density_set)
+            # RDF归一化
+            shell_volumes = 4/3 * np.pi * (edges[1:]**3 - edges[:-1]**3)
+            g_r_frame = hist / (rho * shell_volumes)
 
-        Rg_array = np.array(Rg_results_all)
-        principal_axes_array = np.vstack(principal_axes_all)
-        anisotropy_array = np.array(anisotropy_all)
-        axis_ratios_array = np.vstack(axis_ratios_all)
-        volume_array = np.array(volume_all)
-        density_array = np.array(density_all)
+            if g_r_total is None:
+                g_r_total = np.zeros_like(g_r_frame)
+                bins_total = edges
 
-        data = {
-            "cluster_size" : cluster_size,
-            "cluster_describe" : cluster_describe,
-            "stats_clusters": stats_clusters,
-            "stats_participation" : stats_participation,
-            "Rg_array": Rg_array,
-            "principal_axes_array" : principal_axes_array,
-            "anisotropy_array": anisotropy_array,
-            "axis_ratios_array": axis_ratios_array,
-            "volume_array" : volume_array,
-            "density_array": density_array
+            g_r_total += g_r_frame  # 累积每帧归一化结果
 
-        }
-        if self.args.info:
-            self.plot_data(self.top,data)
-
-        return data
-
-        # ------分布特征模块------
-        
-        
+        # 平均
+        g_r_avg = g_r_total / N_frames
+        r = 0.5 * (bins_total[1:] + bins_total[:-1])
+        ## 2. 平滑曲线
+        # 绘图
+        plt.plot(r, g_r_avg)
+        plt.xlabel("r")
+        plt.ylabel("g(r)")
+        plt.show()
+                
         # ------氢键计算模块------
         #氢键数量，离子键数量，分布
 
 
         # ------能量计算模块------
         # 能量分解计算
+
+
+        # data = {
+        #     "cluster_size" : cluster_size,
+        #     "cluster_describe" : cluster_describe,
+        #     "stats_clusters": stats_clusters,
+        #     "stats_participation" : stats_participation,
+        #     "Rg_array": Rg_array,
+        #     "principal_axes_array" : principal_axes_array,
+        #     "anisotropy_array": anisotropy_array,
+        #     "axis_ratios_array": axis_ratios_array,
+        #     "volume_array" : volume_array,
+        #     "density_array": density_array
+
+        # }
+        # if self.args.info:
+        #     self.plot_data(self.top,data)
+
+        # return data
+
     @staticmethod
     def plot_data(data):
         

@@ -143,6 +143,7 @@ class ClusterAnalysis:
         Volume_set = []
         density_set = []
         box = box * 10
+
         for res_set in cluster_set:
             positions = np.vstack([res.atoms.positions for res in res_set])
             masses = np.concatenate([res.atoms.masses for res in res_set])
@@ -179,7 +180,37 @@ class ClusterAnalysis:
 
         return S_set, Rgs, principal_axes_set, anisotropy_set, axis_ratios_set,Volume_set, density_set
 
+    def distribution_analysis(self, cluster_set, box_size, dr=0.05):
+        import numpy as np
+        from scipy.spatial.distance import squareform
 
+        box_size = np.asarray(box_size)
+        r_max = np.min(box_size) / 2
+        bins = np.arange(0, r_max + dr, dr)
+        edges = bins
+
+        cluster_rcm = []
+        for cluster in cluster_set:
+            positions = np.vstack([res.atoms.positions for res in cluster]) / 10
+            masses = np.concatenate([res.atoms.masses for res in cluster])
+            M = np.sum(masses)
+
+            positions = self.unwrap_positions(positions, box_size)
+            r_cm = np.sum(positions * masses[:, None], axis=0) / M
+            cluster_rcm.append(r_cm)
+
+        coords = np.array(cluster_rcm)
+
+        delta = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+        delta = np.abs(delta)
+        delta = np.where(delta > 0.5 * box_size, box_size - delta, delta)
+        dis_matrix = np.sqrt(np.sum(delta**2, axis=-1))
+
+        distances = squareform(dis_matrix, checks=False)
+        hist, _ = np.histogram(distances, bins=bins)
+
+        return hist, edges, len(cluster_rcm)
+    
     # def save_outcome(summarys, time, data_file):
 
     #     lines_list = []
