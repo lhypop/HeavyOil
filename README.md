@@ -48,6 +48,7 @@ cd HeavyOil
 
 pip install -r requirements.txt
 ```
+Note: HeavyOil requires a working GROMACS installation, as it depends on GROMACS .gro and .xtc files for trajectory analysis. Please ensure GROMACS is installed and accessible in your system PATH before using this tool.
 
 ## Usage
 Display help message:
@@ -77,7 +78,7 @@ Analysis options:
                              Example: 'ASP1,ASN2' or 'AS*'
 ```
 
-# Samples
+## Samples
 Run a basic analysis with GRO:
 ```
 python main.py -s system.gro
@@ -95,3 +96,13 @@ Analyze a specific time window (frames 0–100, every 10th frame):
 ```
 python main.py -s system.gro -t traj.xtc -b 0 -e 100 -i 10
 ```
+
+## Output
+
+Currently, custom naming is not supported. The tool generates the following files:
+
+- `system.ndx` — Index file. The `[aro_zone]` group contains all atoms of the clustered aggregates, which can be used for further analysis.
+- `system_aro_extract.gro` — Cluster structure file.
+- `system_aro_extract.top` — Topology file, containing the molecular types and counts in the clustered results, suitable for further analysis.
+- `testA_line.tcl` — VMD visualization script.
+- `testA_move.tcl` — VMD script for optimized visualization effects.
