@@ -46,7 +46,7 @@ git clone https://github.com/lhypop/HeavyOil.git
 
 cd HeavyOil
 
-pip install -r requirements.txt
+conda create -n <env> -c conda-forge --file package-list.txt
 ```
 Note: HeavyOil requires a working GROMACS installation, as it depends on GROMACS .gro and .xtc files for trajectory analysis. Please ensure GROMACS is installed and accessible in your system PATH before using this tool.
 
