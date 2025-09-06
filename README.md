@@ -52,12 +52,12 @@ Note: HeavyOil requires a working GROMACS installation, as it depends on GROMACS
 
 ## Usage
 Display help message:
-```
+```bash
 python -m HeavyOil -h
 ```
 
 ## Command-Line Options
-```
+```bash
 Input files:
   -s GRO, --gro GRO          Topology file (.gro)
   -t TRJ, --trj TRJ          Trajectory file (.xtc)
@@ -80,20 +80,20 @@ Analysis options:
 
 ## Samples
 Run a basic analysis with GRO:
-```
+```bash
 python main.py -s system.gro
 ```
 Perform cluster information analysis on the entire system:
-```
+```bash
 python main.py -s system.gro -t traj.xtc --info --infoselect all
 
 ```
 Select specific residues (e.g., ASP1 and ASN2 or AS*) for analysis:
-```
+```bash
 python main.py -s system.gro -t traj.xtc --residueselect "ASP1,ASN2"
 ```
 Analyze a specific time window (frames 0–100, every 10th frame):
-```
+```bash
 python main.py -s system.gro -t traj.xtc -b 0 -e 100 -i 10
 ```
 
@@ -106,3 +106,14 @@ Currently, custom naming is not supported. The tool generates the following file
 - `system_aro_extract.top` — Topology file, containing the molecular types and counts in the clustered results, suitable for further analysis.
 - `testA_line.tcl` — VMD visualization script.
 - `testA_move.tcl` — VMD script for optimized visualization effects.
+
+## Test
+
+You can quickly test the HeavyOil package with the provided example files:
+
+```bash
+# Copy the test topology file
+cp HeavyOil/test/test.gro .
+
+# Run HeavyOil on the test file
+python -m HeavyOil -s test.gro
