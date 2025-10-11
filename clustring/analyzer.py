@@ -1,3 +1,4 @@
+import os
 import argparse
 import numpy as np
 from pathlib import Path
@@ -5,14 +6,17 @@ from collections import defaultdict
 from collections import Counter
 from typing import List,Tuple
 from tqdm import tqdm
+import MDAnalysis as mda
 
 from ..edbscan.FastPeriodicDBSCAN import FastPeriodicDBSCAN
 from .coordinate import coordinate
 from .postprocess import postprocess
 from ..analysis.clusteranalysis import ClusterAnalysis
+from ..analysis.energyanalysis import EnergyAnalysis
+from ..analysis.interactanalysis import Interactanalysis
+
 from ..visual.generate import GMXClusterTool
 from ..visual.translate import clusterTranslator
-from ..visual.ploter import MyPlot
 from ..utils.preprocess import Preprocessor
 
 class ClusterAnalyzer:
@@ -34,6 +38,7 @@ class ClusterAnalyzer:
         
         # Required topology file (GRO format)
         self.top = args.gro
+        self.xtc = args.trj
         
         # Initialize preprocessing pipeline - handles:
         # 1. Trajectory loading (GRO/XTC)
@@ -54,14 +59,12 @@ class ClusterAnalyzer:
         # Default location: ./temp relative to current working directory
         self.temp = Path.cwd() / "temp"
         self.temp.mkdir(exist_ok=True)  # Create if doesn't exist
-        
-        # Initialize box dimensions - will be set during analysis
-        # based on trajectory dimensions
-        self.box = None  # Will store [lx, ly, lz] box vectors
+    
     
     def _DBSCAN_clustering(self,
                 coords: np.ndarray,
-                aromatic_residues: List[str]) -> List[Tuple[int, str]]:
+                aromatic_residues: List[str],
+                box) -> List[Tuple[int, str]]:
         """
         Perform improved DBSCAN clustering with periodic boundary conditions (PBC).
         
@@ -78,7 +81,7 @@ class ClusterAnalyzer:
         """
         model = FastPeriodicDBSCAN(eps=self.eps, 
                                    min_samples=self.min, 
-                                   box_size=self.box)
+                                   box_size=box)
         cluster_labels = model.fit_predict(coords)
 
         clustered_residues = [
@@ -89,51 +92,57 @@ class ClusterAnalyzer:
 
         return clustered_residues
     
+
+    def analyzing(self, specific_frame, topfile, xtcfile, temp_file, residues):
+        # traject = mda.Universe(topfile, xtcfile)
+        traject = mda.Universe(topfile, xtcfile)
+        traject.trajectory[specific_frame] 
+
+        temp = temp_file / str(specific_frame)
+        temp.mkdir(exist_ok=True)
+        coordinator = coordinate(temp, residues)
+
+        # Get aromatic ring centers and corresponding residues
+        gro_ring_centers, aromatic_residue, box = coordinator._get_center_of_aroring(traject)
+
+        cluster_labels = self._DBSCAN_clustering(gro_ring_centers, aromatic_residue, box)
+        merged_clusters = postprocess(cluster_labels)._postprocess(self.args.infoselect)
+
+        return specific_frame, merged_clusters
+    
+    
     def analyze_aromatic_clusters(self):
 
         frame_clusters = defaultdict(list)
 
-        summarys = []
-        cluster_summary = []
-        cluster_time = []
+        from concurrent.futures import ProcessPoolExecutor
 
-        coordinator = coordinate(self.temp, self.residues)
+        from functools import partial
+        func = partial(
+            self.analyzing,
+            topfile=self.args.gro,
+            xtcfile=self.args.trj,
+            temp_file=self.temp,
+            residues=self.residues
+        )
 
-        for specific_frame in tqdm(self.frames, desc="Processing"):
-            # Get aromatic ring centers and corresponding residues
-            self.traject.trajectory[specific_frame] 
-            gro_ring_centers, aromatic_residue, self.box = coordinator._get_center_of_aroring(self.traject)
-            cluster_labels = self._DBSCAN_clustering(gro_ring_centers, aromatic_residue)
+        # 多进程执行
+        with ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+            results = list(tqdm(executor.map(func, self.frames), total=len(self.frames), desc="cluster processing"))
 
-            merged_clusters = postprocess(cluster_labels)._postprocess(self.args.infoselect)
-            # Store cluster members for current frame
+        # 收集结果
+        for frame, merged_clusters in results:
             for cluster in merged_clusters:
-                frame_clusters[specific_frame].append(set(cluster))
-
-
-            cluster_sizes = [int(len(cluster)) for cluster in merged_clusters]
-            summarys.append(cluster_sizes)
-            cluster_summary.append(merged_clusters)
-            cluster_time.append(self.traject.trajectory.time)
+                frame_clusters[frame].append(set(cluster))
 
 
         ######visualization########
-
         all_cluster_list = frame_clusters.get(self.frames[-1])
-        clusters_residues_atoms_position = []
-
-        for _, cluster in enumerate(all_cluster_list):
-            cluster_atoms_position = []
-            for residue in cluster:
-                cluster_atoms_position.append(residue.atoms.positions / 10)
-            cluster_atoms_position = np.vstack(cluster_atoms_position)
-            clusters_residues_atoms_position.append(cluster_atoms_position)
-
 
         # Generate output files
         output_base = Path.cwd() / Path(self.top).stem
         move_tcl_path = output_base.with_name(f"{output_base.name}_move.tcl")
-        clusterTranslator(all_cluster_list, self.box, move_tcl_path)
+        clusterTranslator(all_cluster_list, self.traject.trajectory[self.frames[-1]].dimensions[:3], move_tcl_path)
     
         
         processor = GMXClusterTool(
@@ -141,231 +150,201 @@ class ClusterAnalyzer:
         )
         processor.process_clusters(all_cluster_list)
 
+        if self.args.info:
+
+            features = self.extract_characteristic(frame_clusters)
+
+            self.features_set(features, filename=f"{output_base.name}_features.json")
+
+            return features
+
+    def extract_characteristic(self, frame_clusters):
+
+        # ====== 特征提取 ======    
         data_file = Path(f"cluster_nums_{Path(self.top).stem}.txt")
-        ClusterInfoAnalyzer = ClusterAnalysis(data_file)
+        ClusterInfoAnalyzer = ClusterAnalysis(self.traject, data_file, frame_clusters)
 
-        # # ------数量特征模块------
-        # cluster_size = ClusterInfoAnalyzer.cal_Csize_probability(summarys)
-        # cluster_describe = ClusterInfoAnalyzer.get_cluster_statistics(summarys, cluster_time)
-        # components = ["sa*", "ar*", "re*", "as*"]
-        # res_counts = Counter(self.traject.residues.resnames)
-        # stats_clusters, stats_participation = ClusterInfoAnalyzer.get_components_ratio(components,cluster_summary,res_counts)
+        Features_init = {
 
-        # # ------形状特征模块------
-        # Rg_results_all,principal_axes_all,anisotropy_all,axis_ratios_all,volume_all,density_all = [],[],[],[],[],[]
-        # for index, specific_frame in enumerate(self.frames):
-        #     self.traject.trajectory[specific_frame] 
-        #     self.box = coordinator._get_box_dimension(self.traject)
-        #     cluster_set = cluster_summary[index]
+        }
 
-        #     S_set, Rgs, principal_axes_set, anisotropy_set, axis_ratios_set, volume_set, density_set = \
-        #         ClusterInfoAnalyzer.gyration_tensor(cluster_set, self.box)
+        # ------数量特征模块------
+        # Feature I - size distribution
+        size_dis = ClusterInfoAnalyzer.cal_Csize_probability()
 
-        #     Rg_results_all.extend(Rgs)
-        #     principal_axes_all.extend(principal_axes_set)
-        #     anisotropy_all.extend(anisotropy_set)
-        #     axis_ratios_all.extend(axis_ratios_set)
-        #     volume_all.extend(volume_set)
-        #     density_all.extend(density_set)
+        # # Feature II - time information
+        time_stats = ClusterInfoAnalyzer.cal_Cnums_overtime()
 
-        # Rg_array = np.array(Rg_results_all)
-        # principal_axes_array = np.vstack(principal_axes_all)
-        # anisotropy_array = np.array(anisotropy_all)
-        # axis_ratios_array = np.vstack(axis_ratios_all)
-        # volume_array = np.array(volume_all)
-        # density_array = np.array(density_all)
+
+        # Feature III - components information
+        components = ["sa*", "ar*", "re*", "as*"] #设置为可传入的参数， 待修改
+        res_counts = Counter(self.traject.residues.resnames)
+        df_clusters, df_participation  = ClusterInfoAnalyzer.cal_components_ratio(components,res_counts)
+
+
+        # ------形状特征模块------
+        # Feature IV - shape information
+        shape_features = ClusterInfoAnalyzer.cal_shape_describe()
 
 
         # ------分布特征模块------
-        import matplotlib.pyplot as plt
-        bins_total = None
-        g_r_total = None
-        N_frames = len(self.frames)
-        ## 1. 以最小的盒子大小生成区间
+        # Feature IV - distribution information
+        rdf_stats, nnd_stats = ClusterInfoAnalyzer.cal_distribution_analysis()
 
-        for index, specific_frame in enumerate(self.frames):
-            self.traject.trajectory[specific_frame] 
-            self.box = coordinator._get_box_dimension(self.traject)
-            cluster_set = cluster_summary[index]
 
-            hist, edges, n_clusters = ClusterInfoAnalyzer.distribution_analysis(cluster_set,self.box)
-            # 当前帧体积和密度
-            V = np.prod(self.box)
-            rho = n_clusters / V
+        # ------杂原子及氢键分布------
+        InteractAnalyst = Interactanalysis(self.traject, frame_clusters)
+        Heter_info = InteractAnalyst.Heter_statistic_analysis()
 
-            # RDF归一化
-            shell_volumes = 4/3 * np.pi * (edges[1:]**3 - edges[:-1]**3)
-            g_r_frame = hist / (rho * shell_volumes)
+        Hydro_select = " or ".join([f"resname {res}" for res in self.residues])
+        Hydro_info = InteractAnalyst.Hydro_statistic_analysis(select_info=Hydro_select)
 
-            if g_r_total is None:
-                g_r_total = np.zeros_like(g_r_frame)
-                bins_total = edges
+        # ------能量分析模块------
+        EAnalysis = EnergyAnalysis(self.top,self.xtc, self.traject.trajectory.dt,frame_clusters,Path.cwd())
+        Energy_info = EAnalysis.cal_energy()
 
-            g_r_total += g_r_frame  # 累积每帧归一化结果
-
-        # 平均
-        g_r_avg = g_r_total / N_frames
-        r = 0.5 * (bins_total[1:] + bins_total[:-1])
-        ## 2. 平滑曲线
-        # 绘图
-        plt.plot(r, g_r_avg)
-        plt.xlabel("r")
-        plt.ylabel("g(r)")
-        plt.show()
+        Features_init = {
+            "universe"              : self.traject,
+            "frame_cluster"         : frame_clusters,
+            "size_dis"              : size_dis,
+            "time_stats"            : time_stats,
+            "stats_clusters"        : df_clusters,
+            "stats_participation"   : df_participation,
+            "shape_features"        : shape_features,
+            "rdf_stats"             : rdf_stats,
+            "nnd_stats"             : nnd_stats,
+            "Heter_info"            : Heter_info,
+            "Hydro_info"            : Hydro_info,
+            "Energy_info"           : Energy_info,
+        }
                 
-        # ------氢键计算模块------
-        #氢键数量，离子键数量，分布
+        return Features_init
 
-
-        # ------能量计算模块------
-        # 能量分解计算
-
-
-        # data = {
-        #     "cluster_size" : cluster_size,
-        #     "cluster_describe" : cluster_describe,
-        #     "stats_clusters": stats_clusters,
-        #     "stats_participation" : stats_participation,
-        #     "Rg_array": Rg_array,
-        #     "principal_axes_array" : principal_axes_array,
-        #     "anisotropy_array": anisotropy_array,
-        #     "axis_ratios_array": axis_ratios_array,
-        #     "volume_array" : volume_array,
-        #     "density_array": density_array
-
-        # }
-        # if self.args.info:
-        #     self.plot_data(self.top,data)
-
-        # return data
-
-    @staticmethod
-    def plot_data(data):
+    def features_set(self, features, filename):
+        import json
         
-        cluster_size = data["cluster_size"] 
-        cluster_describe = data["cluster_describe"] 
-        stats_clusters = data["stats_clusters"] 
-        stats_participation = data["stats_participation"] 
-        Rg_array = data["Rg_array"] 
-        principal_axes_array = data["principal_axes_array"] 
-        anisotropy_array = data["anisotropy_array"] 
-        axis_ratios_array = data["axis_ratios_array"] 
-        volume_array = data["volume_array"]
-        density_array = data["density_array"] 
+        Features_set = {
 
+        }
 
+        #尺寸特征
+        size, p = features["size_dis"]["size"], features["size_dis"]["p"]
+        avg_size = np.sum(size * p)
+        std_size = np.sum(p * (size - avg_size)**2) 
 
-        ######cluster_analysis#####
-        ploter = MyPlot(nrows=2, ncols=2,figsize=(6,5), dpi= 1080)
-        colors = ploter.colors
-        #团簇尺寸分布
-        ax = 0
-        ploter.bar(cluster_size[0], cluster_size[1] ,label= "cluster_size", ax = ax)
-        ploter.set_axis(ax = ax, xlabel= "Cluster Size", ylabel= "Probability")
+        #时间特征
+        time_stats = features["time_stats"]
+        counts = time_stats[['count']].values
+        sizes = time_stats['mean'].values
 
-        #团簇信息
-        ax = 1
-        x2 = cluster_describe['time'].values / 1000
-        x2 = x2.reshape(1,-1)
-        counts = cluster_describe[['count']].values.T
-        ploter.step(x2,counts,ax = ax)
-        ploter.set_axis(ax = ax, xlabel= "Time (ns)", ylabel= "Counts")
+        #组分组成
+        clu_com = features["stats_clusters"].mean().tolist()
+        par_com = features["stats_participation"].mean().tolist()
 
-        y_groups = cluster_describe[['mean','std']].values.T
-        labels = ['mean','std']
+        #形状特征
+        shapes_features = features["shape_features"]
+        def get_stats(cen, p):
+            bin_width = cen[1] - cen[0]
 
-        ax =  2
-        for y, label,color in zip(y_groups, labels, colors):
-            ploter.step(x2, y, label=label, color=color,ax=ax) 
-        ploter.set_axis(ax = ax, xlabel= "Time (ns)", ylabel= "Cluster Size",legend_loc=1,)
+            mean_val = np.sum(p * cen * bin_width)
+            mean_square = np.sum(p * (cen**2) * bin_width)
 
-        ax = 3
-        x = stats_clusters.index.tolist()
-        y1 = stats_clusters['mean'].values
-        std1 = stats_clusters['std'].values
-        y2 = stats_participation['mean'].values
-        std2 = stats_participation['std'].values
-        bar_width = 0.4
-        x_pos = np.arange(len(x))
-
-        ploter.bar(x_pos - bar_width/2, y1, yerr = std1, 
-                   bar_width = bar_width,capsize=4, error_kw={'elinewidth':1, 'ecolor':'black'},
-                   color=colors[0],label="Clusters",ax=3)
-        ploter.bar(x_pos + bar_width/2, y2, yerr = std2, 
-                   bar_width = bar_width,capsize=4, error_kw={'elinewidth':1, 'ecolor':'black'},
-                   color=colors[1],label="Participation",ax=3)
-
-        ploter.set_axis(ax = ax, xlabel= "Components", ylabel= "Ratio",)
-
-        # ploter.show(show_if=False, save_path=f"{Path(top_path).stem}_cluster.png")
-        ploter.show(show_if=False)
-
-
-        #计算形状特征            
-        ploter = MyPlot(nrows=2, ncols=2, figsize=(6,5), dpi= 1080)
-        colors = ploter.colors
-        ax = 0
-        ploter.probility_densit(Rg_array, ax = ax)
-        ploter.set_axis(ax = ax, xlabel= r"Rg ($\AA$)", ylabel= "Probability Density", 
-                        # title="Radius of Gyration",
-                        grid=True,
-                        # xlim=(0,20),
-                        )
+            var_cal = mean_square - mean_val ** 2
+            return mean_val, var_cal
         
-        short_axes = principal_axes_array[:,0]
-        middle_axes = principal_axes_array[:,1]
-        long_axes = principal_axes_array[:,2]
-
-        ax = 1
-        ploter.probility_densit(short_axes, color = colors[0], label='Short axis', ax = ax)
-        ploter.probility_densit(middle_axes, color = colors[1], label='Middle axis', ax = ax)
-        ploter.probility_densit(long_axes, color = colors[2], label='Long axis', ax = ax)
-        ploter.set_axis(ax = ax, xlabel= "Axis", ylabel= "Probability Density",
-                        # title=r"Cluster Principal Axes (Rg ($\AA$))",
-                        grid=True,
-                        legend_loc=1,flegend_size=10,
-                        # xlim=(5,15),
-                        )
-        # ax = 2
-        # corr = np.corrcoef(middle_axes, long_axes)[0,1]  # 计算皮尔逊相关系数
-        # a, b = np.polyfit(middle_axes, long_axes, 1)     # 拟合直线
-        # x_fit = np.array([min(middle_axes), max(middle_axes)])
-        # y_fit = a * x_fit + b
-        # ploter.line(x_fit, y_fit,color="red", lw=2, label=f'Fit Line (r={corr:.2f})',ax=ax)
-        # ploter.scatter(middle_axes, long_axes, alpha=0.5, label='Data Points',ax=ax)
-        # ploter.set_axis(ax = ax, xlabel= "Middle Axis Length", ylabel= "Long Axis Length",
-        #                 title="Scatter plot with Fit Line",grid=True,)
-
-        # ax = 2
-        # ratio_labels = ['L/M', 'M/S', 'L/S']
-        # for i, label in enumerate(ratio_labels):
-        #     ploter.probility_densit(axis_ratios_array[:,i],label=label, color=colors[i],ax=ax)
-        # ploter.set_axis(ax = ax, xlabel= "Axis Ratios", ylabel= "Probability Density",
-        #                 title="Cluster Axis Ratios",grid=True,
-        #                 # xlim=(0.9,2.0),
-        #                 ) 
-
-        ax = 2
-        ploter.probility_densit(anisotropy_array, ax = ax)    
-        ploter.set_axis(ax = ax, xlabel= r"Shape Anisotropy ($\kappa^2$)", ylabel= "Probability Density",
-                        # title="Cluster Shape Anisotropy",
-                        grid=True,
-                        # xlim=(0,0.6),
-                        )   
-
-        ax = 3
-        ploter.probility_densit(density_array,ax=ax)
-        ploter.set_axis(ax = ax, xlabel= "Cluster density", ylabel= "Probability Density",
-                        # title="Cluster density",
-                        grid=True,
-                        # xlim=(0.25,1.5),
-                        ) 
+        Rg_mean ,  Rg_var = get_stats(shapes_features["Rg"]["cen"], shapes_features["Rg"]["P"])
+        PAS_mean, PAS_var = get_stats(shapes_features["PAS"]["cen"], shapes_features["PAS"]["P"])
+        PAM_mean, PAM_var = get_stats(shapes_features["PAM"]["cen"], shapes_features["PAM"]["P"])
+        PAL_mean, PAL_var = get_stats(shapes_features["PAL"]["cen"], shapes_features["PAL"]["P"])
+        AS_mean ,  AS_var = get_stats(shapes_features["AS"]["cen"], shapes_features["AS"]["P"])
+        ALM_mean, ALM_var = get_stats(shapes_features["ALM"]["cen"], shapes_features["ALM"]["P"])
+        AMS_mean, AMS_var = get_stats(shapes_features["AMS"]["cen"], shapes_features["AMS"]["P"])
+        ALS_mean, ALS_var = get_stats(shapes_features["ALS"]["cen"], shapes_features["ALS"]["P"])
+        VO_mean ,  VO_var = get_stats(shapes_features["VO"]["cen"], shapes_features["VO"]["P"])
+        DE_mean ,  DE_var = get_stats(shapes_features["DE"]["cen"], shapes_features["DE"]["P"])
         
-        # ax = 4
-        # ploter.probility_densit(volume_array,ax=ax)
-        # ploter.set_axis(ax = ax, xlabel= "Cluster volume", ylabel= "Probability Density",
-        #                 title="Cluster Volume",grid=True,
-        #                 # xlim=(500,2500),
-        #                 ) 
-        # ploter.show(show_if=False, save_path=f"{Path(top_path).stem}_Cinfo.png")
-        ploter.show(show_if=False)
+
+        #分布特征
+        rdf_stats = features["rdf_stats"]
+        rdf_means = []
+        for i in range(5):
+            mask = (rdf_stats["r"] > i) & (rdf_stats["r"] < i + 1)
+            rdf_means.append(np.mean(rdf_stats["gr"][mask]))
+
+        nnd_stats = features["nnd_stats"]
+        nnd_mean, nnd_var = get_stats(nnd_stats["cen"], nnd_stats["p"])
+
+        # 杂原子特征
+        Heter_info = features["Heter_info"]
+        Heter_infod = Heter_info.describe()
+        Heter_mean, Heter_var = Heter_infod.loc["mean"], Heter_infod.loc["std"] ** 2
+
+        Hydro_info = features["Hydro_info"]
+        Hydro_infod = Hydro_info.describe()
+        Hydro_mean, Hydro_var = Hydro_infod.loc["mean"], Hydro_infod.loc["std"] ** 2
+
+        # 能量特征
+        Energy_info = features["Energy_info"]
+        Energy_info = Energy_info.describe()
+        Energy_mean, Energy_var = Energy_info.loc["mean"], Energy_info.loc["std"] ** 2
+
+        Features_set= {
+            "avg_size"      : avg_size          ,"var_size"     : std_size      , 
+            "max_size"      : size[-1],
+
+            "Tavg_num"      : np.mean(counts)   ,"Tvar_num"     : np.std(counts),
+            "Tavg_size"     : np.mean(sizes)    ,"Tvar_size"    : np.std(sizes) ,
+
+            "Clust_sat"     : clu_com[0]        ,"Parti_sat"    : par_com[0]    ,
+            "Clust_aro"     : clu_com[1]        ,"Parti_aro"    : par_com[1]    ,
+            "Clust_res"     : clu_com[2]        ,"Parti_res"    : par_com[2]    ,
+            "Clust_asp"     : clu_com[3]        ,"Parti_asp"    : par_com[3]    ,
+
+            "Rg_Mean"       : Rg_mean           ,"Rg_var"       : Rg_var        ,
+            "PAS_Mean"      : PAS_mean          ,"PAS_var"      : PAS_var       ,
+            "PAM_mean"      : PAM_mean          ,"PAM_var"      : PAM_var       ,
+            "PAL_mean"      : PAL_mean          ,"PAL_var"      : PAL_var       ,
+
+            "AS_Mean"       : AS_mean           ,"AS_var"       : AS_var        ,
+
+            "ALM_mean"      : ALM_mean          ,"ALM_var"      : ALM_var       ,
+            "AMS_mean"      : AMS_mean          ,"AMS_var"      : AMS_var       ,
+            "ALS_mean"      : ALS_mean          ,"ALS_var"      : ALS_var       ,
+
+            "VO_mean"       : VO_mean           ,"VO_var"       : VO_var        ,
+
+            "DE_mean"       : DE_mean           ,"DE_var"       : DE_var        ,
+
+            "rdf_01"        : rdf_means[0]      ,"rdf_12"       : rdf_means[1]  ,
+            "rdf_23"        : rdf_means[2]      ,"rdf_34"       : rdf_means[3]  ,
+            "rdf_45"        : rdf_means[4]      ,
+
+            "nnd_mean"      : nnd_mean          ,"nnd_var"      : nnd_var       ,
+
+            "I_heter_mean"  : Heter_mean[1]     ,"I_heter_var"  : Heter_var[1]  ,
+            "O_heter_mean"  : Heter_mean[2]     ,"O_heter_var"  : Heter_var[2]  ,
+            "S_heter_mean"  : Heter_mean[3]     ,"S_heter_var"  : Heter_var[3]  ,
+
+            "I_hydro_mean"  : Hydro_mean[1]     ,"I_hydro_var"  : Hydro_var[1]  ,
+            "O_hydro_mean"  : Hydro_mean[2]     ,"O_hydro_var"  : Hydro_var[2]  ,
+            "S_hydro_mean"  : Hydro_mean[3]     ,"S_hydro_var"  : Hydro_var[3]  ,
+
+            "All_Energy"    : Energy_mean[0]    ,"All_VDW"      : Energy_mean[1],
+            "All_Coulom"    : Energy_mean[2]    ,
+
+            "Clu_Energy"    : Energy_mean[3]    ,"Clu_VDW"      : Energy_mean[4],
+            "Clu_Coulom"    : Energy_mean[5]    ,
+
+            "Cohe_Energy"   : Energy_mean[6]    ,"Cohe_VDW"      : Energy_mean[7],
+            "Cohe_Coulom"   : Energy_mean[8]    ,
+
+            "inclu_Energy"  : Energy_mean[9]    ,"inclu_VDW"      : Energy_mean[10],
+            "inclu_Coulom"  : Energy_mean[11]   ,
+        }
+
+
+        # 保存到文件
+        with open(filename, "w") as f:
+            json.dump(Features_set, f, indent=4)
+
+        return Features_set

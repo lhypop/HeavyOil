@@ -37,8 +37,8 @@ class InputValidator:
         gro_path = Path(self.args.gro)
         if not gro_path.is_file():
             raise FileNotFoundError(f"Topology file not found: {gro_path}")
-        if gro_path.suffix != '.gro':
-            raise ValueError(f"Invalid topology format. Expected .gro, got {gro_path.suffix}")
+        if gro_path.suffix != '.gro' and gro_path.suffix != '.tpr':
+            raise ValueError(f"Invalid topology format. Expected .gro, .tpr, got {gro_path.suffix}")
         self.top = True
 
     def _validate_trajectory(self) -> None:

@@ -18,6 +18,7 @@ def main():
     try:
         parser = ArgParser()
         args = parser.parse_args()
+        print(args)
 
         valiator = InputValidator()
         valiator.valiate_args(args)

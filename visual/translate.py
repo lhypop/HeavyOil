@@ -43,6 +43,7 @@ def clusterTranslator(filtered_clusters,box_lengths,move_file):
                         'direction': 'negative' if direction == -1 else 'positive',
                         'vector': shift  # Translation vector
                     })
+
             
             # Evaluate all possible 1-3 step translations
             # 1-step translations
@@ -58,25 +59,28 @@ def clusterTranslator(filtered_clusters,box_lengths,move_file):
             
             # 2-step translations
             for shift1, shift2 in product(base_shifts, repeat=2):
-                total_shift = shift1['vector'] + shift2['vector']
-                new_center = mol_center + total_shift
-                distance = np.linalg.norm(new_center - ref_center)
-                
-                if distance < best_distance:
-                    best_distance = distance
-                    best_path = [shift1, shift2]
-                    best_total_shift = total_shift
+
+                if len({shift1["axis"], shift2["axis"]}) == 2:
+                    total_shift = shift1['vector'] + shift2['vector']
+                    new_center = mol_center + total_shift
+                    distance = np.linalg.norm(new_center - ref_center)
+                    
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_path = [shift1, shift2]
+                        best_total_shift = total_shift
             
             # 3-step translations
             for shift1, shift2, shift3 in product(base_shifts, repeat=3):
-                total_shift = shift1['vector'] + shift2['vector'] + shift3['vector']
-                new_center = mol_center + total_shift
-                distance = np.linalg.norm(new_center - ref_center)
-                
-                if distance < best_distance:
-                    best_distance = distance
-                    best_path = [shift1, shift2, shift3]
-                    best_total_shift = total_shift
+                if len({shift1["axis"], shift2["axis"], shift3["axis"]}) == 3:
+                    total_shift = shift1['vector'] + shift2['vector'] + shift3['vector']
+                    new_center = mol_center + total_shift
+                    distance = np.linalg.norm(new_center - ref_center)
+                    
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_path = [shift1, shift2, shift3]
+                        best_total_shift = total_shift
             
             # Record movement if improvement found
             if best_path:
