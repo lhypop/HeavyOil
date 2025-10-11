@@ -14,7 +14,7 @@ Molecular dynamics simulation analysis scripts of heavy oil systems.
 - Added analysis of cluster number and shape characteristics.
 - Enabled visualization of analysis results.
 
-### 0.0.2 (Maintenance/0.0.2, under development)
+### 0.0.2 (Maintenance/0.0.2)
 - Planned: Advanced cluster information analysis.  
 
 
@@ -48,7 +48,7 @@ cd HeavyOil
 
 conda create -n <env> -c conda-forge --file package-list.txt
 ```
-Note: HeavyOil requires a working GROMACS installation, as it depends on GROMACS .gro and .xtc files for trajectory analysis. Please ensure GROMACS is installed and accessible in your system PATH before using this tool.
+Note: HeavyOil requires a working GROMACS installation, as it depends on GROMACS .gro or .tpr and .xtc files for trajectory analysis. Please ensure GROMACS is installed and accessible in your system PATH before using this tool. However, the .gro dosen't support the analysis of cluster features.
 
 ## Usage
 Display help message:
@@ -59,7 +59,7 @@ python -m HeavyOil -h
 ## Command-Line Options
 ```bash
 Input files:
-  -s GRO, --gro GRO          Topology file (.gro)
+  -s GRO, --gro GRO          Topology file (.gro or .tpr)
   -t TRJ, --trj TRJ          Trajectory file (.xtc)
 
 Frame selection:
@@ -81,20 +81,20 @@ Analysis options:
 ## Samples
 Run a basic analysis with GRO:
 ```bash
-python main.py -s system.gro
+python -m HeavyOil -s system.gro
 ```
 Perform cluster information analysis on the entire system:
 ```bash
-python main.py -s system.gro -t traj.xtc --info --infoselect all
+python -m HeavyOil -s system.tpr -t traj.xtc --info --infoselect all
 
 ```
 Select specific residues (e.g., ASP1 and ASN2 or AS*) for analysis:
 ```bash
-python main.py -s system.gro -t traj.xtc --residueselect "ASP1,ASN2"
+python -m HeavyOil -s system.gro -t traj.xtc --residueselect "ASP1,ASN2"
 ```
 Analyze a specific time window (frames 0–100, every 10th frame):
 ```bash
-python main.py -s system.gro -t traj.xtc -b 0 -e 100 -i 10
+python -m HeavyOil -s system.gro -t traj.xtc -b 0 -e 100 -i 10
 ```
 
 ## Output
