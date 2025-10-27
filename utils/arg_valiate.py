@@ -47,8 +47,8 @@ class InputValidator:
             trj_path = Path(self.args.trj)
             if not trj_path.is_file():
                 raise FileNotFoundError(f"Trajectory file not found: {trj_path}")
-            if trj_path.suffix != '.xtc':
-                raise ValueError(f"Invalid trajectory format. Expected .xtc, got {trj_path.suffix}")
+            if trj_path.suffix != '.xtc' and trj_path.suffix != '.gro':
+                raise ValueError(f"Invalid trajectory format. Expected .xtc or .gro, got {trj_path.suffix}")
         else:
             self.trj = False
 

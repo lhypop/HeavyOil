@@ -127,7 +127,7 @@ class ClusterAnalyzer:
         )
 
         # 多进程执行
-        with ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+        with ProcessPoolExecutor(max_workers=10) as executor:
             results = list(tqdm(executor.map(func, self.frames), total=len(self.frames), desc="cluster processing"))
 
         # 收集结果
