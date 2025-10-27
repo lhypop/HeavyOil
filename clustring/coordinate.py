@@ -84,7 +84,7 @@ class coordinate:
                 reader = MoleculeReader()
                 _ = reader.read_molecule(temp_pdb, output_path=mol2_file)
 
-            aromatic_rings = self._atoms_in_aromatics(mol2_file)
+            aromatic_rings = self._atoms_in_aromatics(temp_pdb)
 
             if len(aromatic_rings) != 0:
                 atoms_coord = res.atoms.positions
