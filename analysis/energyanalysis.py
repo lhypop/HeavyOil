@@ -137,19 +137,21 @@ class EnergyAnalysis():
             input_commands = ""
             research_list = []
 
+            all_residues = [res for cluster in cluster_info for res in cluster]
+            all_residues = sorted(list(set(all_residues)), key=lambda res: int(res.resid)) ### 重要的
 
             #  residues in all cluster
-            all_residues = [res for cluster in cluster_info for res in cluster]
-            all_residues = sorted(list(set(all_residues)), key=lambda res: res.resid) ### 重要的
-
-            res_ids = ' '.join(str(res.resid) for res in all_residues)
+            # res_ids = ' '.join(str(res.resid) for res in all_residues)
+            all_res_ids = [int(res.resid) for cluster in cluster_info for res in cluster]
+            all_res_ids = sorted(set(all_res_ids))  # set 去重，sorted 排序
+            res_ids = ' '.join(str(rid) for rid in all_res_ids)
             input_commands += f"ri {res_ids}\n"
             input_commands += f"name {n_existing_groups + 0} allcluster\n"
             research_list.append("allcluster")
 
             #  residues in each cluster
             for cluster_i, cluster_residues in enumerate(cluster_info):
-                cluster_residues = sorted(list(set(cluster_residues)), key=lambda res: res.resid)
+                cluster_residues = sorted(list(set(cluster_residues)), key=lambda res: int(res.resid))
                 res_ids = ' '.join(str(res.resid) for res in cluster_residues)
                 input_commands += f"ri {res_ids}\n"
                 input_commands += f"name {n_existing_groups + 1 + cluster_i} cluster_{cluster_i}\n"
@@ -162,7 +164,6 @@ class EnergyAnalysis():
                 research_list.append(f"res_{res.resid}")
                 
             input_commands += "q\n"
-
             _, _ = self.py_subprocess(make_ndx_command, input_commands,self.parent_file)
 
             # if stderr:
@@ -171,6 +172,46 @@ class EnergyAnalysis():
         except Exception as e:
             print(f"Failed to create cluster .ndx file: {e}")
             raise
+
+        # 偶然情况处理
+        def deduplicate_ndx(ndx_file, output_file=None):
+            """
+            读取 GROMACS .ndx 文件，对每个组去重并排序，然后写回文件。
+            
+            参数：
+                ndx_file (str): 输入的 .ndx 文件路径
+                output_file (str, optional): 输出文件路径，如果为 None，则覆盖原文件
+            """
+            if output_file is None:
+                output_file = ndx_file
+
+            groups = {}
+            current_group = None
+
+            # 读取并去重
+            with open(ndx_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("[") and line.endswith("]"):
+                        current_group = line[1:-1].strip()
+                        groups[current_group] = []
+                    else:
+                        indices = [int(x) for x in line.split()]
+                        groups[current_group].extend(indices)
+
+            # 每组去重并排序
+            for group in groups:
+                groups[group] = sorted(set(groups[group]))
+
+            # 写回文件
+            with open(output_file, "w") as f:
+                for group_name, indices in groups.items():
+                    f.write(f"[ {group_name} ]\n")
+                    for i in range(0, len(indices), 15):
+                        f.write(" ".join(str(idx) for idx in indices[i:i+15]) + "\n")
+        deduplicate_ndx(str(self.target_file/ndx_file)) 
 
         return ndx_file,research_list
     
@@ -264,7 +305,7 @@ class EnergyAnalysis():
         # 把 frame 和 ndx_file 固定住
         func = partial(self.energy_cal, frame, ndx_file)
 
-        with ThreadPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             results = list(executor.map(func, research_list))
 
         for item in results:

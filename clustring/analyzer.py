@@ -111,51 +111,90 @@ class ClusterAnalyzer:
         return specific_frame, merged_clusters
     
     
+    # def analyze_aromatic_clusters(self):
+
+    #     frame_clusters = defaultdict(list)
+
+    #     from concurrent.futures import ProcessPoolExecutor
+
+    #     from functools import partial
+    #     func = partial(
+    #         self.analyzing,
+    #         topfile=self.args.gro,
+    #         xtcfile=self.args.trj,
+    #         temp_file=self.temp,
+    #         residues=self.residues
+    #     )
+
+    #     # 多进程执行
+    #     with ProcessPoolExecutor(max_workers=1) as executor:
+    #         results = list(tqdm(executor.map(func, self.frames), total=len(self.frames), desc="cluster processing"))
+
+    #     # 收集结果
+    #     for frame, merged_clusters in results:
+    #         for cluster in merged_clusters:
+    #             frame_clusters[frame].append(set(cluster))
+
+
+    #     ######visualization########
+    #     all_cluster_list = frame_clusters.get(self.frames[-1])
+
+    #     # Generate output files
+    #     output_base = Path.cwd() / Path(self.top).stem
+    #     move_tcl_path = output_base.with_name(f"{output_base.name}_move.tcl")
+    #     clusterTranslator(all_cluster_list, self.traject.trajectory[self.frames[-1]].dimensions[:3], move_tcl_path)
+    
+        
+    #     processor = GMXClusterTool(
+    #         molname = str(output_base)
+    #     )
+    #     processor.process_clusters(all_cluster_list)
+
+    #     if self.args.info:
+
+    #         features = self.extract_characteristic(frame_clusters)
+
+    #         self.features_set(features, filename=f"{output_base.name}_features.json")
+
+    #         return features
+
     def analyze_aromatic_clusters(self):
 
         frame_clusters = defaultdict(list)
 
-        from concurrent.futures import ProcessPoolExecutor
-
-        from functools import partial
-        func = partial(
-            self.analyzing,
-            topfile=self.args.gro,
-            xtcfile=self.args.trj,
-            temp_file=self.temp,
-            residues=self.residues
-        )
-
-        # 多进程执行
-        with ProcessPoolExecutor(max_workers=10) as executor:
-            results = list(tqdm(executor.map(func, self.frames), total=len(self.frames), desc="cluster processing"))
-
-        # 收集结果
-        for frame, merged_clusters in results:
+        # 顺序执行（去掉多进程）
+        for specific_frame in tqdm(self.frames, desc="cluster processing"):
+            frame, merged_clusters = self.analyzing(
+                specific_frame,
+                topfile=self.args.gro,
+                xtcfile=self.args.trj,
+                temp_file=self.temp,
+                residues=self.residues
+            )
             for cluster in merged_clusters:
                 frame_clusters[frame].append(set(cluster))
 
-
-        ######visualization########
+        ###### visualization ########
         all_cluster_list = frame_clusters.get(self.frames[-1])
 
         # Generate output files
         output_base = Path.cwd() / Path(self.top).stem
-        move_tcl_path = output_base.with_name(f"{output_base.name}_move.tcl")
-        clusterTranslator(all_cluster_list, self.traject.trajectory[self.frames[-1]].dimensions[:3], move_tcl_path)
-    
         
+        move_tcl_path = output_base.with_name(f"{output_base.name}_move.tcl")
+        clusterTranslator(
+            all_cluster_list,
+            self.traject.trajectory[self.frames[-1]].dimensions[:3],
+            move_tcl_path
+        )
+
         processor = GMXClusterTool(
-            molname = str(output_base)
+            molname=str(output_base)
         )
         processor.process_clusters(all_cluster_list)
 
+
         if self.args.info:
-
             features = self.extract_characteristic(frame_clusters)
-
-            self.features_set(features, filename=f"{output_base.name}_features.json")
-
             return features
 
     def extract_characteristic(self, frame_clusters):
