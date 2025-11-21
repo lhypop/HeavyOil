@@ -57,9 +57,12 @@ class ArgParser:
         group = parser.add_argument_group('Cluster information options')
         group.add_argument(
             "--info",
-            action="store_true",
-            help="Perform info analysis"
+            nargs='*',  # 改为 '*', 可以 0 个或多个参数
+            default=[], # 默认空列表，不执行任何分析
+            choices=['All','SizeInfo','TimeInfo','Components','Shape','Distribution','Heteratom','Energy'],
+            help="Select one or more analysis modules (e.g. --info SizeInfo Shape Distribution)",
         )
+
         group.add_argument(
         "--infoselect",
         choices=['part', 'all'],
@@ -67,12 +70,36 @@ class ArgParser:
         help="Analysis scope: 'part'=clustered, 'all'=entire system"
         )
 
+        group.add_argument(
+            "--sat",
+            default=None,
+            help="the saturate components in HeavyOil",
+        )  
+
+        group.add_argument(
+            "--aro",
+            default=None,
+            help="the aromatic components in HeavyOil",
+        )  
+
+        group.add_argument(
+            "--res",
+            default=None,
+            help="the resin components in HeavyOil",
+        )  
+
+        group.add_argument(
+            "--asp",
+            default=None,
+            help="the asphaltene components in HeavyOil, e.g. 'ASP1,ASP2' or 'AS*' ",
+        )  
+
     def _add_analysis_arguments(self, parser: argparse.ArgumentParser) -> None:
         group = parser.add_argument_group('Analysis options')
         group.add_argument(
             "--residueselect",
             default='all',
-            help="Residue selection ('all' or specify names (e.g. 'ASP1,ASN2' or 'AS*'))"
+            help="Residue selection ('all' or specify names (e.g. 'ASP1,ASP2' or 'AS*'))"
         )
     
     def parse_args(self) -> argparse.Namespace:

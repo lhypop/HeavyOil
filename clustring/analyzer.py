@@ -54,6 +54,7 @@ class ClusterAnalyzer:
         self.eps = params['eps']             # DBSCAN epsilon parameter (Å)
         self.min = params['min_samples']  # DBSCAN min_samples parameter
         self.traject = params['universe']    # MDAnalysis Universe object
+        self.components = params['components']
         
         # Set up temporary directory for intermediate files
         # Default location: ./temp relative to current working directory
@@ -198,192 +199,165 @@ class ClusterAnalyzer:
             return features
 
     def extract_characteristic(self, frame_clusters):
+        """
+        从聚集体轨迹中提取多维特征信息，包括：
+        - 数量特征
+        - 时间特征
+        - 组分特征
+        - 形状特征
+        - 分布特征
+        - 杂原子与氢键信息
+        - 能量特征
+        """
+        import json
 
-        # ====== 特征提取 ======    
+        # ====== 初始化 ======
         data_file = Path(f"cluster_nums_{Path(self.top).stem}.txt")
         ClusterInfoAnalyzer = ClusterAnalysis(self.traject, data_file, frame_clusters)
 
-        Features_init = {
+        Features_init = {}
+        Features_set = {}
 
-        }
-
-        # ------数量特征模块------
-        # Feature I - size distribution
-        size_dis = ClusterInfoAnalyzer.cal_Csize_probability()
-
-        # # Feature II - time information
-        time_stats = ClusterInfoAnalyzer.cal_Cnums_overtime()
-
-
-        # Feature III - components information
-        components = ["sa*", "ar*", "re*", "as*"] #设置为可传入的参数， 待修改
-        res_counts = Counter(self.traject.residues.resnames)
-        df_clusters, df_participation  = ClusterInfoAnalyzer.cal_components_ratio(components,res_counts)
-
-
-        # ------形状特征模块------
-        # Feature IV - shape information
-        shape_features = ClusterInfoAnalyzer.cal_shape_describe()
-
-
-        # ------分布特征模块------
-        # Feature IV - distribution information
-        rdf_stats, nnd_stats = ClusterInfoAnalyzer.cal_distribution_analysis()
-
-
-        # ------杂原子及氢键分布------
-        InteractAnalyst = Interactanalysis(self.traject, frame_clusters)
-        Heter_info = InteractAnalyst.Heter_statistic_analysis()
-
-        Hydro_select = " or ".join([f"resname {res}" for res in self.residues])
-        Hydro_info = InteractAnalyst.Hydro_statistic_analysis(select_info=Hydro_select)
-
-        # ------能量分析模块------
-        EAnalysis = EnergyAnalysis(self.top,self.xtc, self.traject.trajectory.dt,frame_clusters,Path.cwd())
-        Energy_info = EAnalysis.cal_energy()
-
-        Features_init = {
-            "universe"              : self.traject,
-            "frame_cluster"         : frame_clusters,
-            "size_dis"              : size_dis,
-            "time_stats"            : time_stats,
-            "stats_clusters"        : df_clusters,
-            "stats_participation"   : df_participation,
-            "shape_features"        : shape_features,
-            "rdf_stats"             : rdf_stats,
-            "nnd_stats"             : nnd_stats,
-            "Heter_info"            : Heter_info,
-            "Hydro_info"            : Hydro_info,
-            "Energy_info"           : Energy_info,
-        }
-                
-        return Features_init
-
-    def features_set(self, features, filename):
-        import json
-        
-        Features_set = {
-
-        }
-
-        #尺寸特征
-        size, p = features["size_dis"]["size"], features["size_dis"]["p"]
-        avg_size = np.sum(size * p)
-        std_size = np.sum(p * (size - avg_size)**2) 
-
-        #时间特征
-        time_stats = features["time_stats"]
-        counts = time_stats[['count']].values
-        sizes = time_stats['mean'].values
-
-        #组分组成
-        clu_com = features["stats_clusters"].mean().tolist()
-        par_com = features["stats_participation"].mean().tolist()
-
-        #形状特征
-        shapes_features = features["shape_features"]
+        # ====== 辅助函数 ======
         def get_stats(cen, p):
-            bin_width = cen[1] - cen[0]
-
+            """根据分布中心 cen 和概率密度 p 计算加权平均与方差"""
+            bin_width = cen[1] - cen[0] if len(cen) > 1 else 1.0
             mean_val = np.sum(p * cen * bin_width)
             mean_square = np.sum(p * (cen**2) * bin_width)
-
-            var_cal = mean_square - mean_val ** 2
+            var_cal = mean_square - mean_val**2
             return mean_val, var_cal
-        
-        Rg_mean ,  Rg_var = get_stats(shapes_features["Rg"]["cen"], shapes_features["Rg"]["P"])
-        PAS_mean, PAS_var = get_stats(shapes_features["PAS"]["cen"], shapes_features["PAS"]["P"])
-        PAM_mean, PAM_var = get_stats(shapes_features["PAM"]["cen"], shapes_features["PAM"]["P"])
-        PAL_mean, PAL_var = get_stats(shapes_features["PAL"]["cen"], shapes_features["PAL"]["P"])
-        AS_mean ,  AS_var = get_stats(shapes_features["AS"]["cen"], shapes_features["AS"]["P"])
-        ALM_mean, ALM_var = get_stats(shapes_features["ALM"]["cen"], shapes_features["ALM"]["P"])
-        AMS_mean, AMS_var = get_stats(shapes_features["AMS"]["cen"], shapes_features["AMS"]["P"])
-        ALS_mean, ALS_var = get_stats(shapes_features["ALS"]["cen"], shapes_features["ALS"]["P"])
-        VO_mean ,  VO_var = get_stats(shapes_features["VO"]["cen"], shapes_features["VO"]["P"])
-        DE_mean ,  DE_var = get_stats(shapes_features["DE"]["cen"], shapes_features["DE"]["P"])
-        
 
-        #分布特征
-        rdf_stats = features["rdf_stats"]
-        rdf_means = []
-        for i in range(5):
-            mask = (rdf_stats["r"] > i) & (rdf_stats["r"] < i + 1)
-            rdf_means.append(np.mean(rdf_stats["gr"][mask]))
+        # ====== 数量特征模块 ======
+        if "All" in self.args.info or "SizeInfo" in self.args.info:
+            size_dis = ClusterInfoAnalyzer.cal_Csize_probability()
+            Features_init["size_dis"] = size_dis
 
-        nnd_stats = features["nnd_stats"]
-        nnd_mean, nnd_var = get_stats(nnd_stats["cen"], nnd_stats["p"])
+            size, p = size_dis["size"], size_dis["p"]
+            avg_size = np.sum(size * p)
+            var_size = np.sum(p * (size - avg_size) ** 2)
+            Features_set.update({
+                "avg_size": avg_size,
+                "var_size": var_size,
+                "max_size": size[-1],
+            })
 
-        # 杂原子特征
-        Heter_info = features["Heter_info"]
-        Heter_infod = Heter_info.describe()
-        Heter_mean, Heter_var = Heter_infod.loc["mean"], Heter_infod.loc["std"] ** 2
+        # ====== 时间特征模块 ======
+        if "All" in self.args.info or "TimeInfo" in self.args.info:
+            time_stats = ClusterInfoAnalyzer.cal_Cnums_overtime()
+            Features_init["time_stats"] = time_stats
 
-        Hydro_info = features["Hydro_info"]
-        Hydro_infod = Hydro_info.describe()
-        Hydro_mean, Hydro_var = Hydro_infod.loc["mean"], Hydro_infod.loc["std"] ** 2
+            counts = time_stats['count'].values
+            sizes = time_stats['mean'].values
+            Features_set.update({
+                "Tavg_num": np.mean(counts),
+                "Tvar_num": np.std(counts),
+                "Tavg_size": np.mean(sizes),
+                "Tvar_size": np.std(sizes),
+            })
 
-        # 能量特征
-        Energy_info = features["Energy_info"]
-        Energy_info = Energy_info.describe()
-        Energy_mean, Energy_var = Energy_info.loc["mean"], Energy_info.loc["std"] ** 2
+        # ====== 组分特征模块 ======
+        if "All" in self.args.info or "Components" in self.args.info:
+            if not self.components:
+                raise ValueError("You need to specify the four components (sat, aro, res, asp).")
 
-        Features_set= {
-            "avg_size"      : avg_size          ,"var_size"     : std_size      , 
-            "max_size"      : size[-1],
+            res_counts = Counter(self.traject.residues.resnames)
+            df_clusters, df_participation = ClusterInfoAnalyzer.cal_components_ratio(self.components, res_counts)
+            Features_init["df_clusters"] = df_clusters
+            Features_init["df_participation"] = df_participation
 
-            "Tavg_num"      : np.mean(counts)   ,"Tvar_num"     : np.std(counts),
-            "Tavg_size"     : np.mean(sizes)    ,"Tvar_size"    : np.std(sizes) ,
+            clu_com = df_clusters.mean().tolist()
+            par_com = df_participation.mean().tolist()
 
-            "Clust_sat"     : clu_com[0]        ,"Parti_sat"    : par_com[0]    ,
-            "Clust_aro"     : clu_com[1]        ,"Parti_aro"    : par_com[1]    ,
-            "Clust_res"     : clu_com[2]        ,"Parti_res"    : par_com[2]    ,
-            "Clust_asp"     : clu_com[3]        ,"Parti_asp"    : par_com[3]    ,
+            Features_set.update({
+                "Clust_sat": clu_com[0], "Parti_sat": par_com[0],
+                "Clust_aro": clu_com[1], "Parti_aro": par_com[1],
+                "Clust_res": clu_com[2], "Parti_res": par_com[2],
+                "Clust_asp": clu_com[3], "Parti_asp": par_com[3],
+            })
 
-            "Rg_Mean"       : Rg_mean           ,"Rg_var"       : Rg_var        ,
-            "PAS_Mean"      : PAS_mean          ,"PAS_var"      : PAS_var       ,
-            "PAM_mean"      : PAM_mean          ,"PAM_var"      : PAM_var       ,
-            "PAL_mean"      : PAL_mean          ,"PAL_var"      : PAL_var       ,
+        # ====== 形状特征模块 ======
+        if "All" in self.args.info or "Shape" in self.args.info:
+            shape_features = ClusterInfoAnalyzer.cal_shape_describe()
+            Features_init["shape_features"] = shape_features
 
-            "AS_Mean"       : AS_mean           ,"AS_var"       : AS_var        ,
+            sf = shape_features  # 简写
+            feature_keys = ["Rg", "PAS", "PAM", "PAL", "AS", "ALM", "AMS", "ALS", "VO", "DE"]
 
-            "ALM_mean"      : ALM_mean          ,"ALM_var"      : ALM_var       ,
-            "AMS_mean"      : AMS_mean          ,"AMS_var"      : AMS_var       ,
-            "ALS_mean"      : ALS_mean          ,"ALS_var"      : ALS_var       ,
+            for key in feature_keys:
+                mean_val, var_val = get_stats(sf[key]["cen"], sf[key]["P"])
+                Features_set[f"{key}_mean"] = mean_val
+                Features_set[f"{key}_var"] = var_val
 
-            "VO_mean"       : VO_mean           ,"VO_var"       : VO_var        ,
+        # ====== 分布特征模块 ======
+        if "All" in self.args.info or "Distribution" in self.args.info:
+            rdf_stats, nnd_stats = ClusterInfoAnalyzer.cal_distribution_analysis()
+            Features_init["rdf_stats"] = rdf_stats
+            Features_init["nnd_stats"] = nnd_stats
 
-            "DE_mean"       : DE_mean           ,"DE_var"       : DE_var        ,
+            rdf_means = []
+            for i in range(5):
+                mask = (rdf_stats["r"] > i) & (rdf_stats["r"] < i + 1)
+                rdf_means.append(np.mean(rdf_stats["gr"][mask]))
 
-            "rdf_01"        : rdf_means[0]      ,"rdf_12"       : rdf_means[1]  ,
-            "rdf_23"        : rdf_means[2]      ,"rdf_34"       : rdf_means[3]  ,
-            "rdf_45"        : rdf_means[4]      ,
+            nnd_mean, nnd_var = get_stats(nnd_stats["cen"], nnd_stats["p"])
 
-            "nnd_mean"      : nnd_mean          ,"nnd_var"      : nnd_var       ,
+            Features_set.update({
+                "rdf_01": rdf_means[0], "rdf_12": rdf_means[1],
+                "rdf_23": rdf_means[2], "rdf_34": rdf_means[3],
+                "rdf_45": rdf_means[4],
+                "nnd_mean": nnd_mean, "nnd_var": nnd_var,
+            })
 
-            "I_heter_mean"  : Heter_mean[1]     ,"I_heter_var"  : Heter_var[1]  ,
-            "O_heter_mean"  : Heter_mean[2]     ,"O_heter_var"  : Heter_var[2]  ,
-            "S_heter_mean"  : Heter_mean[3]     ,"S_heter_var"  : Heter_var[3]  ,
+        # ====== 杂原子与氢键特征 ======
+        if "All" in self.args.info or "Heteratom" in self.args.info:
+            InteractAnalyst = Interactanalysis(self.traject, frame_clusters)
+            Heter_info = InteractAnalyst.Heter_statistic_analysis()
 
-            "I_hydro_mean"  : Hydro_mean[1]     ,"I_hydro_var"  : Hydro_var[1]  ,
-            "O_hydro_mean"  : Hydro_mean[2]     ,"O_hydro_var"  : Hydro_var[2]  ,
-            "S_hydro_mean"  : Hydro_mean[3]     ,"S_hydro_var"  : Hydro_var[3]  ,
+            Hydro_select = " or ".join([f"resname {res}" for res in self.residues])
+            Hydro_info = InteractAnalyst.Hydro_statistic_analysis(select_info=Hydro_select)
 
-            "All_Energy"    : Energy_mean[0]    ,"All_VDW"      : Energy_mean[1],
-            "All_Coulom"    : Energy_mean[2]    ,
+            Features_init["Heter_info"] = Heter_info
+            Features_init["Hydro_info"] = Hydro_info
 
-            "Clu_Energy"    : Energy_mean[3]    ,"Clu_VDW"      : Energy_mean[4],
-            "Clu_Coulom"    : Energy_mean[5]    ,
+            Heter_mean, Heter_var = Heter_info.mean(), Heter_info.var()
+            Hydro_mean, Hydro_var = Hydro_info.mean(), Hydro_info.var()
 
-            "Cohe_Energy"   : Energy_mean[6]    ,"Cohe_VDW"      : Energy_mean[7],
-            "Cohe_Coulom"   : Energy_mean[8]    ,
+            Features_set.update({
+                "I_heter_mean": Heter_mean[1], "I_heter_var": Heter_var[1],
+                "O_heter_mean": Heter_mean[2], "O_heter_var": Heter_var[2],
+                "S_heter_mean": Heter_mean[3], "S_heter_var": Heter_var[3],
 
-            "inclu_Energy"  : Energy_mean[9]    ,"inclu_VDW"      : Energy_mean[10],
-            "inclu_Coulom"  : Energy_mean[11]   ,
-        }
+                "I_hydro_mean": Hydro_mean[1], "I_hydro_var": Hydro_var[1],
+                "O_hydro_mean": Hydro_mean[2], "O_hydro_var": Hydro_var[2],
+                "S_hydro_mean": Hydro_mean[3], "S_hydro_var": Hydro_var[3],
+            })
 
+        # ====== 能量特征模块 ======
+        if "All" in self.args.info or "Energy" in self.args.info:
+            EAnalysis = EnergyAnalysis(
+                self.top,
+                self.xtc,
+                self.traject.trajectory.dt,
+                frame_clusters,
+                Path.cwd(),
+            )
+            Energy_info = EAnalysis.cal_energy()
+            Features_init["Energy_info"] = Energy_info
 
-        # 保存到文件
-        with open(filename, "w") as f:
+            E_desc = Energy_info.describe()
+            E_mean = E_desc.loc["mean"]
+
+            Features_set.update({
+                "All_Energy": E_mean[0], "All_VDW": E_mean[1], "All_Coulom": E_mean[2],
+                "Clu_Energy": E_mean[3], "Clu_VDW": E_mean[4], "Clu_Coulom": E_mean[5],
+                "Cohe_Energy": E_mean[6], "Cohe_VDW": E_mean[7], "Cohe_Coulom": E_mean[8],
+                "inclu_Energy": E_mean[9], "inclu_VDW": E_mean[10], "inclu_Coulom": E_mean[11],
+            })
+
+        # ====== 保存特征 ======
+        output_file = f"{Path(self.top).stem}_features.json"
+        with open(output_file, "w") as f:
             json.dump(Features_set, f, indent=4)
 
-        return Features_set
+        print(f"[Feature Extraction Completed] Results saved to {output_file}")
+        return Features_init

@@ -30,6 +30,7 @@ class InputValidator:
         self._validate_topology()
         self._validate_trajectory()
         self._validate_frames()
+        self._validate_info()
         # self._validate_dependencies()
 
     def _validate_topology(self) -> None:
@@ -85,7 +86,13 @@ class InputValidator:
         if self.args.interval <= 0:
             raise ValueError(f"Interval must be positive. Got {self.args.interval}")
 
+    def _validate_info(self) -> None:
+        legal_info_parameters = ["All","SizeInfo","TimeInfo","Components","Shape","Distribution","Heteratom","Energy"]
 
+        if all(info in legal_info_parameters for info in self.args.info):
+            return
+        else:
+            raise ValueError("illegal info parameters")
     # def _validate_dependencies(self) -> None:
     #     """Validate relationships between parameters."""
     #     has_frames = (hasattr(self.args, 'begin') and self.args.begin is not None) or \

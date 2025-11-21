@@ -67,51 +67,33 @@ class ClusterAnalysis:
 
         return {"size": values_sorted, "p": p_counts_sorted}
     
-    def cal_components_ratio(self,components,res_counts):
-        
-        # ====== Part 1: 簇内组分比例 ======
+    def cal_components_ratio(self, components, res_counts):
+        # Part 1: 簇内组分比例
         all_ratios = []
-
         for clusters in self.cluster_summary:
-            cluster_resnames = []
-            for cluster in clusters:
-                for res in cluster:
-                    cluster_resnames.append(res.resname)
-
+            cluster_resnames = [res.resname for cluster in clusters for res in cluster]
             total = len(cluster_resnames)
-            if total == 0:
-                ratios = {p: 0 for p in components}
-            else:
-                ratios = {
-                    p: sum(1 for name in cluster_resnames if fnmatch.fnmatch(name, p)) / total
-                    for p in components
-                }
-            all_ratios.append(ratios)
+            
+            ratios = {
+                key: sum(1 for name in cluster_resnames if name in pattern_list)
+                    / total if total > 0 else 0
+                for key, pattern_list in components.items()
+            }
 
+            all_ratios.append(ratios)
         df_clusters = pd.DataFrame(all_ratios)
 
-        # ====== Part 2: 系统整体参与率（逐帧） ======
+        # Part 2: 系统整体参与率（逐帧）
         frame_ratios = []
-        for clusters in self.cluster_summary:  # 每一帧的聚类结果
-            clustered_resnames = [res.resname for cluster in clusters for res in cluster]
-            clustered_counts = Counter(clustered_resnames)
-
+        for clusters in self.cluster_summary:
+            clustered_counts = Counter(res.resname for cluster in clusters for res in cluster)
             ratios = {}
-            for pattern in components:
-                total_count = sum(count for resname, count in res_counts.items()
-                                if fnmatch.fnmatch(resname, pattern))
-                cluster_count = sum(count for resname, count in clustered_counts.items()
-                                    if fnmatch.fnmatch(resname, pattern))
-                ratio = cluster_count / total_count if total_count > 0 else 0
-                ratios[pattern] = ratio
+            for key, pattern_list in components.items():
+                total_count = sum(res_counts.get(name, 0) for name in pattern_list)
+                cluster_count = sum(clustered_counts.get(name, 0) for name in pattern_list)
+                ratios[key] = cluster_count / total_count if total_count > 0 else 0
             frame_ratios.append(ratios)
-
         df_participation = pd.DataFrame(frame_ratios)
-
-        # components_set = {
-        #     "df_clusters" : df_clusters,
-        #     "df_participation" : df_participation
-        # }
 
         return df_clusters, df_participation
     
