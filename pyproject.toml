@@ -3,16 +3,16 @@ requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "my_package"
+name = "HeavyOil"
 version = "0.1.0"
-authors = [{ name = "Your Name", email = "your@email.com" }]
-description = "A short description of your package"
+authors = [{ name = "OCEAN" }]
+description = "Aromatic ring cluster analysis for heavy oil molecular dynamics simulations"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 
 [project.urls]
-Homepage = "https://github.com/lhypop/HeavyOil.git"
+Homepage = "https://github.com/lhypop/HeavyOil"
